@@ -2,17 +2,18 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"net"
+	"net/http"
 
-	"github.com/sirupsen/logrus"
-	"github.com/gorilla/websocket"
 	"encoding/base64"
+
+	"github.com/gorilla/websocket"
+	"github.com/sirupsen/logrus"
 )
 
 var upgrader = websocket.Upgrader{}
 
-var encoding = base64.RawStdEncoding
+var encoding = base64.StdEncoding
 
 func openConnection(w http.ResponseWriter, r *http.Request) {
 	host := r.URL.Query().Get("host")
@@ -32,7 +33,8 @@ func openConnection(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		for {
-			b := make([]byte, 1000)
+			b := make([]byte, 4096)
+			//n, err := remoteConn.Read(b[1:])
 			n, err := remoteConn.Read(b)
 			if err != nil {
 				logrus.WithError(err).Errorf("[TCP->WS]Failed to read")
@@ -40,8 +42,14 @@ func openConnection(w http.ResponseWriter, r *http.Request) {
 				_ = remoteConn.Close()
 				return
 			}
+			/*if n < 4095 {
+				b[0] = 0x1
+			}
+			n = n + 1
+			*/
 			newB := make([]byte, encoding.EncodedLen(n))
 			encoding.Encode(newB, b[:n])
+			logrus.Infof("TCP->WS[%d] %02X", n, newB)
 			err = wsConn.WriteMessage(websocket.TextMessage, newB)
 			if err != nil {
 				logrus.WithError(err).Errorf("[TCP->WS] Failed to write")
@@ -61,7 +69,7 @@ func openConnection(w http.ResponseWriter, r *http.Request) {
 				_ = remoteConn.Close()
 				return
 			}
-			logrus.Infof("%02X", message)
+			logrus.Infof("WS->TCP %02X", message)
 			newB := make([]byte, encoding.DecodedLen(len(message)))
 			n, err := encoding.Decode(newB, message)
 			if err != nil {
